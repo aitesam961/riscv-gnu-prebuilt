@@ -1,4 +1,4 @@
-name: Build RISC-V Toolchain Linux Multi-Lib Cross Compiler
+name: Build Linux Multi-Lib Cross Compiler
 
 on:
   workflow_dispatch:

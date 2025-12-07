@@ -1,4 +1,4 @@
-name: Build RISC-V Toolchain RV64GCV_zicsr Baremetal Multi-Lib Cross Compiler
+name: Build CVA6 RV64GC_zicsr Baremetal Multi-Lib Cross Compiler
 
 on:
   workflow_dispatch:
