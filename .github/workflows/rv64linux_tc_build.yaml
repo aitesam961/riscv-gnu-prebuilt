@@ -1,4 +1,4 @@
-name: Build RISC-V Toolchain RV64 Linux
+name: Build RV64 Linux RISC-V Toolchain 
 
 on:
   workflow_dispatch:

@@ -1,4 +1,4 @@
-name: Build CVA6 RV64GC_zicsr Baremetal Multi-Lib Cross Compiler
+name: Build CVA6 RV64GC_zifencei_zicsr Baremetal Cross Compiler
 
 on:
   workflow_dispatch:

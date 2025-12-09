@@ -1,4 +1,4 @@
-name: Build RISC-V Toolchain RV32 Newlib
+name: Build RISC-V Toolchain RV32IMF Newlib
 
 on:
   workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
         run: |
           git clone https://github.com/riscv/riscv-gnu-toolchain
           cd riscv-gnu-toolchain
-          ./configure --prefix=/opt/riscv --with-arch=rv32gc --with-abi=ilp32d
+          ./configure --prefix=/opt/riscv --with-arch=rv32imf --with-abi=ilp32f
           make -j $(nproc)
 
       - name: Upload Artifact
