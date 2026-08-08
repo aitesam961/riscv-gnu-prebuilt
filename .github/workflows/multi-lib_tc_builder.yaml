@@ -1,4 +1,4 @@
-name: Build RISC-V Toolchain RV64 Newlib
+name: Build RISC-V Toolchain multilib
 
 on:
   workflow_dispatch:
