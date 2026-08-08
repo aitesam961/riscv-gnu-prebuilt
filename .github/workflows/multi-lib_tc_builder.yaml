@@ -21,13 +21,13 @@ jobs:
 
       - name: Build multilib RISC-V Toolchain
         run: |
-          git clone https://github.com/riscv/riscv-gnu-toolchain
+          git clone --recursive https://github.com/riscv/riscv-gnu-toolchain
           cd riscv-gnu-toolchain
+          
+          # Configure git to retry on transient failures
+          git config --global http.maxRequests 1
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 60
+          
           ./configure --prefix=/opt/riscv
           make -j $(nproc)
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: riscv-toolchain-multilib
-          path: /opt/riscv
