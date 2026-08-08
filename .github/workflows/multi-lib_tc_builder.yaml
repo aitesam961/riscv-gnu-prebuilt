@@ -24,10 +24,11 @@ jobs:
           git clone --recursive https://github.com/riscv/riscv-gnu-toolchain
           cd riscv-gnu-toolchain
           
-          # Configure git to retry on transient failures
-          git config --global http.maxRequests 1
-          git config --global http.lowSpeedLimit 1000
-          git config --global http.lowSpeedTime 60
-          
-          ./configure --prefix=/opt/riscv
+          ./configure --prefix=/opt/riscv --enable-multilib
           make -j $(nproc)
+      
+      - name: Upload Toolchain
+        uses: actions/upload-artifact@v4
+        with:
+          name: multilib-baremetal-toolchain
+          path: riscv/

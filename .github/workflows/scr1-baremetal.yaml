@@ -42,7 +42,7 @@ jobs:
 
       - name: Clone RISC-V GNU Toolchain
         run: |
-          git clone https://github.com/riscv/riscv-gnu-toolchain.git
+          git clone --recursive https://github.com/riscv/riscv-gnu-toolchain.git
           cd riscv-gnu-toolchain
 
       - name: Configure for SCR1
