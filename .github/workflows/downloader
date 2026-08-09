@@ -1,0 +1,26 @@
+name: Download OSBoxes Image and Upload Artifact
+
+on:
+  workflow_dispatch:
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create download directory
+        run: mkdir -p downloads
+
+      - name: Download file from SourceForge
+        run: |
+          wget -O downloads/ubuntu-24.04-osboxes.7z \
+            "https://drive.syntacore.com/s/8Atb2bcYjZS8eHE/download?path=/2025/2025.12&files=sc-dt-2025.12.tar.gz"
+
+      - name: Verify download
+        run: ls -lh downloads
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-24.04-osboxes
+          path: downloads/ubuntu-24.04-osboxes.7z
