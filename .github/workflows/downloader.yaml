@@ -1,3 +1,4 @@
+```yaml
 name: Download OSBoxes Image and Upload Artifact
 
 on:
@@ -9,18 +10,51 @@ jobs:
 
     steps:
       - name: Create download directory
-        run: mkdir -p downloads
+        run: mkdir -p downloads extracted
 
-      - name: Download file from SourceForge
+      - name: Download tar.gz file
         run: |
-          wget -O downloads/ubuntu-24.04-osboxes.7z \
+          wget -O downloads/sc-dt-2025.12.tar.gz \
             "https://drive.syntacore.com/s/8Atb2bcYjZS8eHE/download?path=/2025/2025.12&files=sc-dt-2025.12.tar.gz"
 
-      - name: Verify download
-        run: ls -lh downloads
+      - name: Verify downloaded file
+        run: |
+          ls -lh downloads/
+          file downloads/sc-dt-2025.12.tar.gz
 
-      - name: Upload artifact
+      - name: Extract tar.gz
+        run: |
+          tar -xzf downloads/sc-dt-2025.12.tar.gz -C extracted
+
+      - name: Show extracted contents
+        run: |
+          echo "Extracted contents:"
+          find extracted -maxdepth 2 -type d -print
+
+      - name: Zip each subdirectory separately
+        run: |
+          mkdir -p zipped
+
+          for dir in extracted/*/; do
+            if [ -d "$dir" ]; then
+              name=$(basename "$dir")
+              echo "Creating ZIP for: $name"
+
+              cd extracted
+              zip -r "../zipped/${name}.zip" "$name"
+              cd ..
+            fi
+          done
+
+      - name: Verify ZIP files
+        run: |
+          echo "Created ZIP files:"
+          ls -lh zipped/
+
+      - name: Upload all ZIP files
         uses: actions/upload-artifact@v4
         with:
-          name: ubuntu-24.04-osboxes
-          path: downloads/ubuntu-24.04-osboxes.7z
+          name: sc-dt-2025.12
+          path: zipped/*.zip
+          if-no-files-found: error
+```
