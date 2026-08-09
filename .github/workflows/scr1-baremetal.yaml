@@ -17,25 +17,21 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo apt-get clean
-          df -h
 
       - name: Install Dependencies
         run: sudo apt-get install -y autoconf automake autotools-dev curl python3 python3-pip libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build git cmake libglib2.0-dev
 
-      - name: Clone RISC-V GNU Toolchain (shallow)
+      - name: Clone RISC-V GNU Toolchain (only needed submodules)
         run: |
           git clone --depth 1 https://github.com/riscv/riscv-gnu-toolchain
           cd riscv-gnu-toolchain
-          git submodule update --init --recursive --depth 1
+          git submodule update --init --depth 1 binutils gcc newlib
 
       - name: Build RV32IMC RISC-V Toolchain
         run: |
           cd riscv-gnu-toolchain
           ./configure --prefix=/opt/riscv --with-arch=rv32imc_zicsr_zifencei --with-abi=ilp32
           make -j $(nproc)
-
-      - name: Check disk usage after build
-        run: df -h
 
       - name: List installed binaries
         run: ls -la /opt/riscv/bin
