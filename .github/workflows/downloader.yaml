@@ -1,4 +1,3 @@
-```yaml
 name: Download OSBoxes Image and Upload Artifact
 
 on:
@@ -57,4 +56,3 @@ jobs:
           name: sc-dt-2025.12
           path: zipped/*.zip
           if-no-files-found: error
-```
