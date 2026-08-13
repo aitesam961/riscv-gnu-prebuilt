@@ -31,13 +31,26 @@ jobs:
             libtool patchutils bc zlib1g-dev libexpat-dev ninja-build git cmake libglib2.0-dev
 
       - name: Configure git mirrors + resilience settings
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # sourceware.org (upstream host for binutils-gdb / newlib-cygwin submodules)
           # rate-limits anonymous HTTPS clones (HTTP 429). Redirect to GitHub's official
-          # read-only mirrors, which don't have this problem. Must be set BEFORE the
-          # --recursive clone so submodule URLs resolve through the mirror too.
+          # read-only mirrors instead. Must be set BEFORE the --recursive clone so
+          # submodule URLs resolve through the mirror too.
           git config --global url."https://github.com/bminor/binutils-gdb.git".insteadOf "https://sourceware.org/git/binutils-gdb.git"
           git config --global url."https://github.com/bminor/newlib.git".insteadOf "https://sourceware.org/git/newlib-cygwin.git"
+
+          # Authenticate ALL github.com HTTPS traffic with this run's GITHUB_TOKEN.
+          # GitHub-hosted runners share IP ranges across every concurrent job on the
+          # platform, so purely anonymous clones to github.com get rate-limited/
+          # throttled into a 401. Git then tries to prompt for a username on a
+          # non-interactive shell, which is the exact error seen in the logs:
+          #   "fatal: could not read Username ... No such device or address"
+          # An authenticated request uses this job's own rate-limit bucket instead
+          # of the shared anonymous pool.
+          git config --global http.https://github.com/.extraheader \
+            "AUTHORIZATION: basic $(echo -n "x-access-token:${GH_TOKEN}" | base64 -w0)"
 
           # Larger buffer for big pack transfers over HTTP, and serialize submodule
           # fetches instead of bursting them in parallel (bursts are what tend to
@@ -46,6 +59,8 @@ jobs:
           git config --global submodule.fetchJobs 1
 
       - name: Clone riscv-gnu-toolchain (with retry)
+        env:
+          GIT_TERMINAL_PROMPT: "0"   # fail fast instead of hanging on a credential prompt
         run: |
           for attempt in 1 2 3 4 5; do
             if git clone --recursive https://github.com/riscv/riscv-gnu-toolchain; then
