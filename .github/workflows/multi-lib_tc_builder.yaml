@@ -1,4 +1,4 @@
-name: Build RISC-V Toolchain multilib
+name: Build RISC-V Toolchain Generic multilib
 
 on:
   workflow_dispatch:
