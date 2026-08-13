@@ -23,17 +23,8 @@ jobs:
 
       - name: Clone RISC-V GNU Toolchain (only needed submodules, via GitHub mirrors)
         run: |
-          git clone --depth 1 https://github.com/riscv/riscv-gnu-toolchain
+          git clone https://github.com/aitesam961/riscv-gnu-toolchain.git
           cd riscv-gnu-toolchain
-
-          git config submodule.binutils.url https://github.com/bminor/binutils-gdb.git
-          git config submodule.newlib.url https://github.com/bminor/newlib.git
-
-          for i in 1 2 3; do
-            git submodule update --init --depth 1 binutils gcc newlib && break
-            echo "Retry $i failed, waiting 20s..."
-            sleep 20
-          done
 
       - name: Build RV32IMC RISC-V Toolchain
         run: |
