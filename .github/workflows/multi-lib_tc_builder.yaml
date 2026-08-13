@@ -17,14 +17,47 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Dependencies
-        run: sudo apt-get install -y autoconf automake autotools-dev curl python3 python3-pip libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build git cmake libglib2.0-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf \
+            automake \
+            autotools-dev \
+            curl \
+            python3 \
+            python3-pip \
+            libmpc-dev \
+            libmpfr-dev \
+            libgmp-dev \
+            gawk \
+            build-essential \
+            bison \
+            flex \
+            texinfo \
+            gperf \
+            libtool \
+            patchutils \
+            bc \
+            zlib1g-dev \
+            libexpat-dev \
+            ninja-build \
+            git \
+            cmake \
+            libglib2.0-dev
 
       - name: Build RV64 newlib RISC-V Toolchain
         run: |
-          git clone https://github.com/aitesam961/riscv-gnu-toolchain
+          git clone https://github.com/riscv-collab/riscv-gnu-toolchain.git
           cd riscv-gnu-toolchain
-          ./configure --prefix=/opt/riscv --enable-multilib --disable-linux
-          make -j $(nproc)
+
+          git checkout f27c68dd632102a1eab85d97a90f3cdc4e90350c
+
+          ./configure \
+            --prefix=/opt/riscv \
+            --enable-multilib \
+            --disable-linux
+
+          make -j$(nproc)
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
