@@ -1,4 +1,5 @@
-name: Build RISC-V Toolchain Generic multilib
+name: Build RISC-V Toolchain RV64 Newlib
+
 on:
   workflow_dispatch:
     inputs:
@@ -10,82 +11,23 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Free disk space
-        run: |
-          # riscv-gnu-toolchain (multilib, non-shallow submodules) is disk-hungry;
-          # ubuntu-latest only ships ~14GB free by default. Reclaim unused preinstalled
-          # toolchains before we start.
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
-          sudo apt-get clean
-          df -h
-
       - name: Install Dependencies
+        run: sudo apt-get install -y autoconf automake autotools-dev curl python3 python3-pip libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build git cmake libglib2.0-dev
+
+      - name: Build RV64 newlib RISC-V Toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake autotools-dev curl python3 python3-pip \
-            libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf \
-            libtool patchutils bc zlib1g-dev libexpat-dev ninja-build git cmake libglib2.0-dev
-
-      - name: Configure git mirrors + resilience settings
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # sourceware.org (upstream host for binutils-gdb / newlib-cygwin submodules)
-          # rate-limits anonymous HTTPS clones (HTTP 429). Redirect to GitHub's official
-          # read-only mirrors instead. Must be set BEFORE the --recursive clone so
-          # submodule URLs resolve through the mirror too.
-          git config --global url."https://github.com/bminor/binutils-gdb.git".insteadOf "https://sourceware.org/git/binutils-gdb.git"
-          git config --global url."https://github.com/bminor/newlib.git".insteadOf "https://sourceware.org/git/newlib-cygwin.git"
-
-          # Authenticate ALL github.com HTTPS traffic with this run's GITHUB_TOKEN.
-          # GitHub-hosted runners share IP ranges across every concurrent job on the
-          # platform, so purely anonymous clones to github.com get rate-limited/
-          # throttled into a 401. Git then tries to prompt for a username on a
-          # non-interactive shell, which is the exact error seen in the logs:
-          #   "fatal: could not read Username ... No such device or address"
-          # An authenticated request uses this job's own rate-limit bucket instead
-          # of the shared anonymous pool.
-          git config --global http.https://github.com/.extraheader \
-            "AUTHORIZATION: basic $(echo -n "x-access-token:${GH_TOKEN}" | base64 -w0)"
-
-          # Larger buffer for big pack transfers over HTTP, and serialize submodule
-          # fetches instead of bursting them in parallel (bursts are what tend to
-          # trigger rate limiting in the first place).
-          git config --global http.postBuffer 524288000
-          git config --global submodule.fetchJobs 1
-
-      - name: Clone riscv-gnu-toolchain (with retry)
-        env:
-          GIT_TERMINAL_PROMPT: "0"   # fail fast instead of hanging on a credential prompt
-        run: |
-          for attempt in 1 2 3 4 5; do
-            if git clone --recursive https://github.com/aitesam961/riscv-gnu-toolchain; then
-              break
-            fi
-            echo "Clone/submodule fetch failed (attempt $attempt), backing off..."
-            rm -rf riscv-gnu-toolchain
-            sleep $((attempt * 20))
-          done
-          test -d riscv-gnu-toolchain
-
-      - name: Build multilib RISC-V Toolchain
-        run: |
+          git clone https://github.com/aitesam961/riscv-gnu-toolchain
           cd riscv-gnu-toolchain
           ./configure --prefix=/opt/riscv --enable-multilib --disable-linux
-          df -h
-          make -j "$(nproc)" || { echo "---- disk usage on failure ----"; df -h; exit 1; }
+          make -j $(nproc)
 
-      - name: Sanity check
-        run: |
-          /opt/riscv/bin/riscv64-unknown-elf-gcc --version
-          /opt/riscv/bin/riscv64-unknown-elf-gcc --print-multi-lib
-
-      - name: Upload Toolchain
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: multilib-baremetal-toolchain
+          name: riscv-toolchain-rv64-newlib
           path: /opt/riscv
