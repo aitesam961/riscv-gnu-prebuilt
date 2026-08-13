@@ -63,7 +63,7 @@ jobs:
           GIT_TERMINAL_PROMPT: "0"   # fail fast instead of hanging on a credential prompt
         run: |
           for attempt in 1 2 3 4 5; do
-            if git clone --recursive https://github.com/riscv/riscv-gnu-toolchain; then
+            if git clone --recursive https://github.com/aitesam961/riscv-gnu-toolchain; then
               break
             fi
             echo "Clone/submodule fetch failed (attempt $attempt), backing off..."
