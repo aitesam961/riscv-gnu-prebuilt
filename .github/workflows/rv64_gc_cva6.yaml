@@ -1,3 +1,4 @@
+
 name: Build CVA6 RV64GC_zifencei_zicsr Baremetal Cross Compiler
 
 on:
