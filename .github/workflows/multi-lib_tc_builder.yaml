@@ -1,66 +1,78 @@
-name: Build RISC-V Toolchain RV64 Newlib
+name: Build RISC-V MULTI- Toolchain
 
 on:
   workflow_dispatch:
-    inputs:
-      build:
-        description: 'Run the RISC-V Toolchain build'
-        required: true
-        default: 'yes'
+  # push:
+  #   branches: [main]
+
+env:
+  PREFIX: ${{ github.workspace }}/install
+  ARCH: rv64gc_zicsr_zifencei
+  ABI: lp64d
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Free up disk space (build needs ~20 GB)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            autoconf \
-            automake \
-            autotools-dev \
-            curl \
-            python3 \
-            python3-pip \
-            libmpc-dev \
-            libmpfr-dev \
-            libgmp-dev \
-            gawk \
-            build-essential \
-            bison \
-            flex \
-            texinfo \
-            gperf \
-            libtool \
-            patchutils \
-            bc \
-            zlib1g-dev \
-            libexpat-dev \
-            ninja-build \
-            git \
-            cmake \
-            libglib2.0-dev
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                       /usr/local/share/boost /usr/local/graalvm \
+                       /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
 
-      - name: Build RV64 newlib RISC-V Toolchain
+      - name: Install build dependencies
         run: |
-          git clone https://github.com/riscv-collab/riscv-gnu-toolchain.git
-          cd riscv-gnu-toolchain
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake autotools-dev curl python3 python3-pip \
+            libmpc-dev libmpfr-dev libgmp-dev libusb-1.0-0-dev \
+            gawk build-essential bison flex texinfo gperf libtool \
+            patchutils bc zlib1g-dev libexpat1-dev libncurses-dev \
+            device-tree-compiler
 
-          git checkout f27c68dd632102a1eab85d97a90f3cdc4e90350c
+      - name: Clone sources + submodules (shallow, parallel)
+        run: |
+          # shallow top-level clone; add --branch <release-tag> to pin a version
+          git clone --depth 1 https://github.com/riscv-collab/riscv-gnu-toolchain src
+          cd src
+          # --depth 1 : only the pinned commit of each submodule, no history
+          # --jobs N  : fetch submodules in parallel
+          # (if a pinned commit isn't a branch tip, git fetches that exact SHA
+          #  directly — GitHub allows arbitrary-SHA fetches)
+          git submodule update --init --recursive --depth 1 --jobs "$(nproc)"
 
-          ./configure \
-            --prefix=/opt/riscv \
-            --enable-multilib \
-            --disable-linux
+      - name: Configure (single-config newlib toolchain)
+        working-directory: src
+        run: |
+          ./configure --prefix="$PREFIX" \
+            --with-arch="$ARCH" \
+            --with-abi="$ABI"
 
-          make -j$(nproc)
+      - name: Build (default make target = newlib)
+        working-directory: src
+        run: make -j"$(nproc)"    # drop to -j2 if the runner OOMs
 
-      - name: Upload Artifact
+      - name: Smoke test (verifies zicsr + zifencei assemble/link)
+        run: |
+          "$PREFIX/bin/riscv64-unknown-elf-gcc" --version
+          printf 'int main(void) { asm volatile("csrr x0, misa"); asm volatile("fence.i"); return 0; }\n' > /tmp/smoke.c
+          "$PREFIX/bin/riscv64-unknown-elf-gcc" -march="$ARCH" -mabi="$ABI" /tmp/smoke.c -o /tmp/smoke.elf
+          ls -l /tmp/smoke.elf
+          du -sh "$PREFIX"
+
+      - name: Package (tar preserves exec permissions)
+        run: tar -czf "riscv-newlib-${ARCH}.tar.gz" -C "$PREFIX" .
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: riscv-toolchain-rv64-newlib
-          path: /opt/riscv
+          name: riscv-newlib-${{ env.ARCH }}
+          path: riscv-newlib-*.tar.gz
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: error
