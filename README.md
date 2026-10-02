@@ -9,11 +9,18 @@ This repository makes use of GitHub actions to build the `riscv-gnu-toolchain` f
 
 ### Available Configurations
 - [x]   RV64 Newlib
-- [x]   RV64GCV
-- [x]   RV64 Linux
+- [x]   RV64GC
+- [x]   RV64 Multilib
 - [x]   RV32 Newlib
-- [x]   Multi-lib Cross Compiler (Baremetal)
-- [x]   Multi-lib Cross Compiler (Linux)
+- [x]   RV32 Newlib
+- [x]   OpenHWGroup/CVA6
+- [x]   Pulp-Platform/Cheshire SoC
+- [x]   Pulp-Platform/Culsans
+- [x]   Syntacore/SCR1
+- [x]   lowRISC/IBEX
+
+
+
 
 
 If you require a custom configuration, consider building yourself or open an Issue with tag:`Enhancement`

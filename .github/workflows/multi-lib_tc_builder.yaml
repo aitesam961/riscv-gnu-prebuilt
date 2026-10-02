@@ -1,14 +1,9 @@
-name: Build RISC-V MULTI- Toolchain
+name: RISC-V Newlib (multilib)
 
 on:
+  schedule:
+    - cron: "0 3 1 * *"    # 03:00 UTC on the 1st of every month
   workflow_dispatch:
-  # push:
-  #   branches: [main]
-
-env:
-  PREFIX: ${{ github.workspace }}/install
-  ARCH: rv64gc_zicsr_zifencei
-  ABI: lp64d
 
 jobs:
   build:
@@ -16,16 +11,14 @@ jobs:
     timeout-minutes: 350
     steps:
 
-      - name: Free up disk space (build needs ~20 GB)
+      - name: Free up disk space
         run: |
-          df -h /
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
                        /usr/local/share/boost /usr/local/graalvm \
                        /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force >/dev/null 2>&1 || true
-          df -h /
 
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -35,44 +28,37 @@ jobs:
             patchutils bc zlib1g-dev libexpat1-dev libncurses-dev \
             device-tree-compiler
 
-      - name: Clone sources + submodules (shallow, parallel)
+      - name: Clone sources (shallow, parallel submodules)
         run: |
-          # shallow top-level clone; add --branch <release-tag> to pin a version
           git clone --depth 1 https://github.com/riscv-collab/riscv-gnu-toolchain src
           cd src
-          # --depth 1 : only the pinned commit of each submodule, no history
-          # --jobs N  : fetch submodules in parallel
-          # (if a pinned commit isn't a branch tip, git fetches that exact SHA
-          #  directly — GitHub allows arbitrary-SHA fetches)
           git submodule update --init --recursive --depth 1 --jobs "$(nproc)"
 
-      - name: Configure (single-config newlib toolchain)
+      - name: Configure
         working-directory: src
-        run: |
-          ./configure --prefix="$PREFIX" \
-            --with-arch="$ARCH" \
-            --with-abi="$ABI"
+        run: ./configure --prefix="$HOME/riscv"
 
-      - name: Build (default make target = newlib)
+      - name: Build
         working-directory: src
-        run: make -j"$(nproc)"    # drop to -j2 if the runner OOMs
+        run: make -j"$(nproc)"
 
-      - name: Smoke test (verifies zicsr + zifencei assemble/link)
+      - name: Smoke test
         run: |
-          "$PREFIX/bin/riscv64-unknown-elf-gcc" --version
-          printf 'int main(void) { asm volatile("csrr x0, misa"); asm volatile("fence.i"); return 0; }\n' > /tmp/smoke.c
-          "$PREFIX/bin/riscv64-unknown-elf-gcc" -march="$ARCH" -mabi="$ABI" /tmp/smoke.c -o /tmp/smoke.elf
-          ls -l /tmp/smoke.elf
-          du -sh "$PREFIX"
+          $HOME/riscv/bin/riscv64-unknown-elf-gcc --version
+          printf 'int main(void){ asm volatile("csrr x0, misa"); asm volatile("fence.i"); return 0; }\n' > smoke64.c
+          printf 'int main(void){ return 0; }\n' > smoke32.c
+          $HOME/riscv/bin/riscv64-unknown-elf-gcc -march=rv64gc -mabi=lp64d  smoke64.c -o smoke64.elf
+          $HOME/riscv/bin/riscv64-unknown-elf-gcc -march=rv32imac -mabi=ilp32 smoke32.c -o smoke32.elf
+          ls -l smoke*.elf
 
-      - name: Package (tar preserves exec permissions)
-        run: tar -czf "riscv-newlib-${ARCH}.tar.gz" -C "$PREFIX" .
+      - name: Package
+        run: tar -czf riscv-newlib-multilib.tar.gz -C "$HOME/riscv" .
 
-      - name: Upload artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: riscv-newlib-${{ env.ARCH }}
-          path: riscv-newlib-*.tar.gz
-          retention-days: 30
+          name: riscv-newlib-multilib-${{ github.run_number }}
+          path: riscv-newlib-multilib.tar.gz
+          retention-days: 40
           compression-level: 0
           if-no-files-found: error

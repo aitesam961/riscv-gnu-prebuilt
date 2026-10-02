@@ -1,38 +1,24 @@
-name: Build RISC-V GNU Toolchain
+name: RISC-V Newlib (rv64gc)
 
 on:
+  schedule:
+    - cron: "0 3 1 * *"    # 03:00 UTC on the 1st of every month
   workflow_dispatch:
-    inputs:
-      target:
-        description: "Toolchain to build"
-        required: true
-        default: "newlib"
-        type: choice
-        options:
-          - newlib   # bare-metal (riscv64-unknown-elf-*)
-          - linux    # Linux (riscv64-unknown-linux-gnu-*)
-  # push:
-  #   branches: [main]
 
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 350        # build can take hours; hard cap is 360
-    env:
-      TARGET: ${{ inputs.target || 'newlib' }}
-      PREFIX: ${{ github.workspace }}/install
-
+    timeout-minutes: 350
     steps:
-      - name: Free up disk space (the build needs ~20 GB)
+
+      - name: Free up disk space
         run: |
-          df -h /
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
                        /usr/local/share/boost /usr/local/graalvm \
                        /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force >/dev/null 2>&1 || true
-          df -h /
 
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -42,45 +28,35 @@ jobs:
             patchutils bc zlib1g-dev libexpat1-dev libncurses-dev \
             device-tree-compiler
 
-      - name: Clone toolchain sources
-        uses: actions/checkout@v4
-        with:
-          repository: riscv-collab/riscv-gnu-toolchain
-          # ref: 2024.04.12   # uncomment + set a release tag for reproducible builds
-          path: src
-
-      - name: Fetch submodules
-        working-directory: src
-        run: git submodule update --init --recursive
+      - name: Clone sources (shallow, parallel submodules)
+        run: |
+          git clone --depth 1 https://github.com/riscv-collab/riscv-gnu-toolchain src
+          cd src
+          git submodule update --init --recursive --depth 1 --jobs "$(nproc)"
 
       - name: Configure
         working-directory: src
-        run: ./configure --prefix="$PREFIX"
-        # optional flags, e.g.:
-        #   --with-arch=rv64gc --with-abi=lp64d   (single-config newlib)
-        #   --enable-multilib                     (for the linux target)
+        run: ./configure --prefix="$HOME/riscv" --with-arch=rv64gc_zicsr_zifencei --with-abi=lp64d
 
       - name: Build
         working-directory: src
-        run: make -j"$(nproc)" "$TARGET"    # drop to -j2 if the runner OOMs
+        run: make -j"$(nproc)"
 
-      - name: Sanity check
+      - name: Smoke test
         run: |
-          if [ "$TARGET" = "linux" ]; then
-            "$PREFIX/bin/riscv64-unknown-linux-gnu-gcc" --version
-          else
-            "$PREFIX/bin/riscv64-unknown-elf-gcc" --version
-          fi
-          du -sh "$PREFIX"
+          $HOME/riscv/bin/riscv64-unknown-elf-gcc --version
+          printf 'int main(void){ asm volatile("csrr x0, misa"); asm volatile("fence.i"); return 0; }\n' > smoke.c
+          $HOME/riscv/bin/riscv64-unknown-elf-gcc -march=rv64gc_zicsr_zifencei -mabi=lp64d smoke.c -o smoke.elf
+          ls -l smoke.elf
 
-      - name: Package (tar preserves exec permissions, artifact zips don't)
-        run: tar -czf "riscv-gnu-toolchain-${TARGET}.tar.gz" -C "$PREFIX" .
+      - name: Package
+        run: tar -czf riscv-newlib-rv64gc.tar.gz -C "$HOME/riscv" .
 
-      - name: Upload artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: riscv-gnu-toolchain-${{ env.TARGET }}
-          path: riscv-gnu-toolchain-*.tar.gz
-          retention-days: 30
-          compression-level: 0    # already gzipped; skip zip compression for speed
+          name: riscv-newlib-rv64gc-${{ github.run_number }}   # unique name (v4 rejects duplicates)
+          path: riscv-newlib-rv64gc.tar.gz
+          retention-days: 40    # overlaps next monthly build in case one fails
+          compression-level: 0
           if-no-files-found: error
