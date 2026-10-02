@@ -32,9 +32,11 @@ jobs:
 
       - name: Verify builder directory
         run: |
-          ls cva6/util/
           ls cva6/util/toolchain-builder/
           ls cva6/util/toolchain-builder/config/
+          echo "--- /bin/sh is:"; ls -l /bin/sh
+          echo "--- global.sh lines 55-62:"
+          sed -n '55,62p' cva6/util/toolchain-builder/config/global.sh
 
       - name: Install Dependencies
         run: |
@@ -46,6 +48,11 @@ jobs:
             zlib1g-dev libexpat-dev libglib2.0-dev device-tree-compiler \
             help2man rsync unzip
 
+      - name: Use bash as /bin/sh
+        run: |
+          sudo ln -sf /bin/bash /bin/sh
+          ls -l /bin/sh
+
       - name: Prepare install directory
         run: |
           sudo mkdir -p "$INSTALL_DIR"
@@ -53,11 +60,11 @@ jobs:
 
       - name: Fetch toolchain sources
         working-directory: cva6/util/toolchain-builder
-        run: sh get-toolchain.sh "${{ inputs.config }}"
+        run: bash get-toolchain.sh "${{ inputs.config }}"
 
       - name: Build and install toolchain
         working-directory: cva6/util/toolchain-builder
-        run: sh build-toolchain.sh "${{ inputs.config }}" "$INSTALL_DIR"
+        run: bash build-toolchain.sh "${{ inputs.config }}" "$INSTALL_DIR"
 
       - name: Sanity check
         run: |
