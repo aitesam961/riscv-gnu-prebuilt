@@ -23,8 +23,18 @@ jobs:
           sudo docker image prune --all --force || true
           df -h /
 
-      - name: Checkout Repository
+      - name: Checkout CVA6 fork
         uses: actions/checkout@v4
+        with:
+          repository: aitesam961/cva6
+          ref: master
+          path: cva6
+
+      - name: Verify builder directory
+        run: |
+          ls cva6/util/
+          ls cva6/util/toolchain-builder/
+          ls cva6/util/toolchain-builder/config/
 
       - name: Install Dependencies
         run: |
@@ -42,13 +52,11 @@ jobs:
           sudo chown -R "$USER":"$USER" "$INSTALL_DIR"
 
       - name: Fetch toolchain sources
-        working-directory: util/toolchain-builder
+        working-directory: cva6/util/toolchain-builder
         run: sh get-toolchain.sh "${{ inputs.config }}"
 
       - name: Build and install toolchain
-        working-directory: util/toolchain-builder
-        env:
-          NUM_JOBS: ${{ steps.cpus.outputs.n }}
+        working-directory: cva6/util/toolchain-builder
         run: sh build-toolchain.sh "${{ inputs.config }}" "$INSTALL_DIR"
 
       - name: Sanity check
