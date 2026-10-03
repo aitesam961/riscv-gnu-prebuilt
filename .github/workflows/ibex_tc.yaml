@@ -36,7 +36,7 @@ jobs:
           cd src
           git submodule update --init --recursive --depth 1 --jobs "$(nproc)"
 
-      - name: Configure (Ibex: rv32imc, soft-float)
+      - name: Configure (Ibex- rv32imc, soft-float)
         working-directory: src
         run: |
           # If your Ibex has bitmanip enabled, append _zba_zbb_zbs to --with-arch
