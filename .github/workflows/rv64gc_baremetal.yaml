@@ -57,6 +57,6 @@ jobs:
         with:
           name: riscv-newlib-rv64gc-${{ github.run_number }}   # unique name (v4 rejects duplicates)
           path: riscv-newlib-rv64gc.tar.gz
-          retention-days: 40    # overlaps next monthly build in case one fails
+          retention-days: 40
           compression-level: 0
           if-no-files-found: error

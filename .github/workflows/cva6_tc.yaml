@@ -1,0 +1,68 @@
+name: CVA6 Toolchain Builder (GCC 13.1.0, riscv-none-elf)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 1 * *"    # 1st of each month — delete these 2 lines if manual-only
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                       /usr/local/share/boost /usr/local/graalvm \
+                       /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake autotools-dev curl python3 python3-pip git \
+            libmpc-dev libmpfr-dev libgmp-dev libusb-1.0-0-dev \
+            gawk build-essential bison flex texinfo gperf libtool \
+            patchutils bc zlib1g-dev libexpat1-dev libncurses-dev
+
+      - name: Clone CVA6 (add --branch <tag> to pin a release)
+        run: git clone --depth 1 https://github.com/openhwfoundation/cva6 cva6
+
+      - name: Build toolchain
+        working-directory: cva6/util/toolchain-builder
+        # Runs CVA6's own flow: fetches the pinned sources into src/,
+        # then build-toolchain.sh builds binutils + gcc 13.1.0 + newlib
+        # for the riscv-none-elf triple. Default config: gcc-13.1.0-baremetal.
+        run: |
+          if ! make build; then
+            echo "### 'make build' failed. Makefile targets:"
+            grep -E '^[A-Za-z0-9._-]+:' Makefile || true
+            echo "### Start of the toolchain-builder README:"
+            sed -n '1,60p' README.md || true
+            exit 1
+          fi
+
+      - name: Locate toolchain + sanity check
+        id: toolchain
+        run: |
+          GCC=$(find "$GITHUB_WORKSPACE/cva6" "$HOME" \
+                -name 'riscv-none-elf-gcc' -path '*/bin/*' 2>/dev/null | head -n1)
+          if [ -z "$GCC" ]; then echo "riscv-none-elf-gcc not found"; exit 1; fi
+          DIR=$(dirname "$(dirname "$GCC")")
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          "$GCC" --version
+          du -sh "$DIR"
+
+      - name: Package
+        run: tar -czf cva6-toolchain.tar.gz -C "${{ steps.toolchain.outputs.dir }}" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cva6-toolchain-${{ github.run_number }}
+          path: cva6-toolchain.tar.gz
+          retention-days: 40
+          compression-level: 0
+          if-no-files-found: error

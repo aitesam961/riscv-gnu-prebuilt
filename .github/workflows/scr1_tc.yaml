@@ -1,0 +1,62 @@
+name: RISC-V Newlib (rv32imc)
+
+on:
+  schedule:
+    - cron: "0 3 1 * *"    # 03:00 UTC on the 1st of every month
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                       /usr/local/share/boost /usr/local/graalvm \
+                       /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake autotools-dev curl python3 python3-pip \
+            libmpc-dev libmpfr-dev libgmp-dev libusb-1.0-0-dev \
+            gawk build-essential bison flex texinfo gperf libtool \
+            patchutils bc zlib1g-dev libexpat1-dev libncurses-dev \
+            device-tree-compiler
+
+      - name: Clone sources (shallow, parallel submodules)
+        run: |
+          git clone --depth 1 https://github.com/riscv-collab/riscv-gnu-toolchain src
+          cd src
+          git submodule update --init --recursive --depth 1 --jobs "$(nproc)"
+
+      - name: Configure
+        working-directory: src
+        run: ./configure --prefix="$HOME/riscv" --with-arch=rv32imc_zicsr_zifencei --with-abi=lp32d
+
+      - name: Build
+        working-directory: src
+        run: make -j"$(nproc)"
+
+      - name: Smoke test
+        run: |
+          $HOME/riscv/bin/riscv64-unknown-elf-gcc --version
+          printf 'int main(void){ asm volatile("csrr x0, misa"); asm volatile("fence.i"); return 0; }\n' > smoke.c
+          $HOME/riscv/bin/riscv64-unknown-elf-gcc -march=rv32imc_zicsr_zifencei -mabi=lp64d smoke.c -o smoke.elf
+          ls -l smoke.elf
+
+      - name: Package
+        run: tar -czf riscv-newlib-rv32imc.tar.gz -C "$HOME/riscv" .
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: riscv-newlib-rv32imc-${{ github.run_number }}   # unique name (v4 rejects duplicates)
+          path: riscv-newlib-rv32imc.tar.gz
+          retention-days: 40
+          compression-level: 0
+          if-no-files-found: error
