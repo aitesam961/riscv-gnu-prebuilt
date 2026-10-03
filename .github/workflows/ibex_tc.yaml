@@ -1,4 +1,4 @@
-name: Ibex Toolchain (lowRISC Clang, RV32IMCB)
+name: Ibex Toolchain (rv32imc newlib)
 
 on:
   workflow_dispatch:
@@ -11,71 +11,79 @@ jobs:
     timeout-minutes: 350
     steps:
 
-      - name: Free up disk space (LLVM builds need ~25 GB)
+      - name: Free up disk space
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
                        /usr/local/share/boost /usr/local/graalvm \
-                       /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
+                       /usr/local/share/chromium /usr/local/share/powershell \
+                       /usr/lib/jvm /opt/hostedtoolcache
           sudo docker image prune --all --force >/dev/null 2>&1 || true
+          sudo apt-get clean
+          df -h /
 
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build python3 python3-pip git curl \
-            autoconf automake autotools-dev libmpc-dev libmpfr-dev libgmp-dev \
-            gawk bison flex texinfo gperf libtool patchutils bc \
-            zlib1g-dev libexpat1-dev libncurses-dev
+            autoconf automake autotools-dev curl python3 python3-pip git \
+            libmpc-dev libmpfr-dev libgmp-dev libusb-1.0-0-dev \
+            gawk build-essential bison flex texinfo gperf libtool \
+            patchutils bc zlib1g-dev libexpat1-dev libncurses-dev
 
-      - name: Clone lowrisc-toolchains
+      - name: Clone sources (shallow, parallel submodules)
         run: |
-          git clone --depth 1 https://github.com/lowRISC/lowrisc-toolchains lowrisc
-          cd lowrisc
-          git submodule update --init --recursive 2>/dev/null || true
+          git clone --depth 1 https://github.com/riscv-collab/riscv-gnu-toolchain src
+          cd src
+          git submodule update --init --recursive --depth 1 --jobs "$(nproc)"
 
-      - name: Build (binutils + clang for rv32imcb)
-        working-directory: lowrisc
-        # Same caveat as the CVA6 one: I can't read their README from here, so
-        # if the default 'make' isn't the build entry point, the failing log
-        # prints the Makefile's targets + the README so it's a 1-line fix.
+      - name: Configure (Ibex: rv32imc, soft-float)
+        working-directory: src
         run: |
-          if ! make; then
-            echo "### default 'make' failed. Makefile targets:"
-            grep -E '^[A-Za-z0-9._-]+:' Makefile || true
-            echo "### README (first 80 lines):"
-            sed -n '1,80p' README.md || true
-            exit 1
-          fi
+          # If your Ibex has bitmanip enabled, append _zba_zbb_zbs to --with-arch
+          ./configure --prefix="$HOME/riscv" \
+            --with-arch=rv32imc_zicsr_zifencei \
+            --with-abi=ilp32
 
-      - name: Package
-        id: tc
-        working-directory: lowrisc
+      - name: Build
+        working-directory: src
         run: |
-          # Prefer the release tarball the build itself produces
-          TARBALL=$(find . \( -name '*.tar.gz' -o -name '*.tar.xz' \) \
-                     -not -path './.git/*' 2>/dev/null | head -n1)
-          if [ -n "$TARBALL" ]; then
-            echo "Found produced tarball: $TARBALL"
-            sudo cp "$TARBALL" "$GITHUB_WORKSPACE/"
-            sudo chmod a+r "$GITHUB_WORKSPACE/$(basename "$TARBALL")"
-            echo "file=$(basename "$TARBALL")" >> "$GITHUB_OUTPUT"
-          else
-            # Fallback: locate the installed tree and tar it ourselves
-            TOOL=$(find . -name 'riscv32-unknown-elf-*' -path '*/bin/*' \
-                   -not -path './.git/*' 2>/dev/null | head -n1)
-            [ -n "$TOOL" ] || { echo "*** no toolchain output found"; exit 1; }
-            DIR=$(dirname "$(dirname "$TOOL")")
-            "$TOOL" --version || true
-            sudo tar -czf "$GITHUB_WORKSPACE/ibex-toolchain.tar.gz" -C "$DIR" .
-            sudo chmod a+r "$GITHUB_WORKSPACE/ibex-toolchain.tar.gz"
-            echo "file=ibex-toolchain.tar.gz" >> "$GITHUB_OUTPUT"
-          fi
+          set -o pipefail
+          make -j"$(nproc)" 2>&1 | tee build.log    # drop to -j2 if the runner OOMs
+
+      - name: Diagnose (only if the build failed)
+        if: failure()
+        working-directory: src
+        run: |
+          echo "### Disk state:"
+          df -h /
+          df -i /
+          echo "### OOM killer activity:"
+          sudo dmesg | grep -i "out of memory" | tail -n 10 || true
+          echo "### Error lines from build.log:"
+          grep -nE '\*\*\*|No space|Killed|memory|rror' build.log | tail -n 40 || true
+
+      - name: Smoke test (verifies zicsr + zifencei assemble/link)
+        run: |
+          $HOME/riscv/bin/riscv64-unknown-elf-gcc --version
+          printf 'int main(void){ asm volatile("csrr x0, misa"); asm volatile("fence.i"); return 0; }\n' > smoke.c
+          $HOME/riscv/bin/riscv64-unknown-elf-gcc -march=rv32imc_zicsr_zifencei -mabi=ilp32 smoke.c -o smoke.elf
+          ls -l smoke.elf
+
+      - name: Add riscv32-unknown-elf-* aliases (Ibex scripts expect this prefix)
+        run: |
+          cd "$HOME/riscv/bin"
+          for t in riscv64-unknown-elf-*; do
+            ln -svf "$t" "riscv32-unknown-elf-${t#riscv64-unknown-elf-}"
+          done
+
+      - name: Package (tar preserves exec permissions and symlinks)
+        run: tar -czf ibex-toolchain-rv32imc.tar.gz -C "$HOME/riscv" .
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: ibex-toolchain-rv32imcb-${{ github.run_number }}
-          path: ${{ steps.tc.outputs.file }}
+          name: ibex-toolchain-rv32imc-${{ github.run_number }}
+          path: ibex-toolchain-rv32imc.tar.gz
           retention-days: 40
           compression-level: 0
           if-no-files-found: error
