@@ -1,0 +1,81 @@
+name: Ibex Toolchain (lowRISC Clang, RV32IMCB)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 1 * *"    # 1st of each month — delete these 2 lines if manual-only
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+
+      - name: Free up disk space (LLVM builds need ~25 GB)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                       /usr/local/share/boost /usr/local/graalvm \
+                       /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build python3 python3-pip git curl \
+            autoconf automake autotools-dev libmpc-dev libmpfr-dev libgmp-dev \
+            gawk bison flex texinfo gperf libtool patchutils bc \
+            zlib1g-dev libexpat1-dev libncurses-dev
+
+      - name: Clone lowrisc-toolchains
+        run: |
+          git clone --depth 1 https://github.com/lowRISC/lowrisc-toolchains lowrisc
+          cd lowrisc
+          git submodule update --init --recursive 2>/dev/null || true
+
+      - name: Build (binutils + clang for rv32imcb)
+        working-directory: lowrisc
+        # Same caveat as the CVA6 one: I can't read their README from here, so
+        # if the default 'make' isn't the build entry point, the failing log
+        # prints the Makefile's targets + the README so it's a 1-line fix.
+        run: |
+          if ! make; then
+            echo "### default 'make' failed. Makefile targets:"
+            grep -E '^[A-Za-z0-9._-]+:' Makefile || true
+            echo "### README (first 80 lines):"
+            sed -n '1,80p' README.md || true
+            exit 1
+          fi
+
+      - name: Package
+        id: tc
+        working-directory: lowrisc
+        run: |
+          # Prefer the release tarball the build itself produces
+          TARBALL=$(find . \( -name '*.tar.gz' -o -name '*.tar.xz' \) \
+                     -not -path './.git/*' 2>/dev/null | head -n1)
+          if [ -n "$TARBALL" ]; then
+            echo "Found produced tarball: $TARBALL"
+            sudo cp "$TARBALL" "$GITHUB_WORKSPACE/"
+            sudo chmod a+r "$GITHUB_WORKSPACE/$(basename "$TARBALL")"
+            echo "file=$(basename "$TARBALL")" >> "$GITHUB_OUTPUT"
+          else
+            # Fallback: locate the installed tree and tar it ourselves
+            TOOL=$(find . -name 'riscv32-unknown-elf-*' -path '*/bin/*' \
+                   -not -path './.git/*' 2>/dev/null | head -n1)
+            [ -n "$TOOL" ] || { echo "*** no toolchain output found"; exit 1; }
+            DIR=$(dirname "$(dirname "$TOOL")")
+            "$TOOL" --version || true
+            sudo tar -czf "$GITHUB_WORKSPACE/ibex-toolchain.tar.gz" -C "$DIR" .
+            sudo chmod a+r "$GITHUB_WORKSPACE/ibex-toolchain.tar.gz"
+            echo "file=ibex-toolchain.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ibex-toolchain-rv32imcb-${{ github.run_number }}
+          path: ${{ steps.tc.outputs.file }}
+          retention-days: 40
+          compression-level: 0
+          if-no-files-found: error
