@@ -38,7 +38,7 @@ jobs:
         working-directory: cva6/util/toolchain-builder/src/gcc
         run: git apply ../../gcc-cva6-tune.patch
 
-      - name: Build toolchain (default config: gcc-13.1.0-baremetal)
+      - name: Build toolchain (default config gcc-13.1.0-baremetal)
         working-directory: cva6/util/toolchain-builder
         run: bash build-toolchain.sh "$HOME/riscv"
 
