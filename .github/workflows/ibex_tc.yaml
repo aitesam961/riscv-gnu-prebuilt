@@ -1,0 +1,107 @@
+name: Ibex Toolchain (rv32imc newlib)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 1 * *"    # 03:00 UTC on the 1st of every month
+
+# Matches the toolchain revision recorded by the repository submodule.
+env:
+  TOOLCHAIN_REF: 99e2d2bac5144f5152ba6d3fbf04bdd9b9ba4381
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                       /usr/local/share/boost /usr/local/graalvm \
+                       /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake autotools-dev curl python3 python3-pip \
+            libmpc-dev libmpfr-dev libgmp-dev libusb-1.0-0-dev \
+            gawk build-essential bison flex texinfo gperf libtool \
+            patchutils bc zlib1g-dev libexpat1-dev libncurses-dev \
+            device-tree-compiler
+
+      - name: Clone sources (shallow, parallel submodules)
+        run: |
+          git init src
+          cd src
+          git remote add origin https://github.com/riscv-collab/riscv-gnu-toolchain
+          git fetch --depth 1 origin "$TOOLCHAIN_REF"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$TOOLCHAIN_REF"
+          git submodule update --init --recursive --depth 1 --jobs "$(nproc)"
+
+      - name: Configure (Ibex- rv32imc, soft-float)
+        working-directory: src
+        run: |
+          # If your Ibex has bitmanip enabled, append _zba_zbb_zbs to --with-arch
+          ./configure --prefix="$HOME/riscv" \
+            --with-arch=rv32imc_zicsr_zifencei \
+            --with-abi=ilp32
+
+      - name: Build
+        working-directory: src
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" 2>&1 | tee build.log    # drop to -j2 if the runner OOMs
+
+      - name: Diagnose (only if the build failed)
+        if: failure()
+        working-directory: src
+        run: |
+          echo "### Disk state:"
+          df -h /
+          df -i /
+          echo "### OOM killer activity:"
+          sudo dmesg | grep -i "out of memory" | tail -n 10 || true
+          echo "### Error lines from build.log:"
+          grep -nE '\*\*\*|No space|Killed|memory|rror' build.log | tail -n 40 || true
+
+      - name: Smoke test (verifies zicsr + zifencei assemble/link)
+        run: |
+          $HOME/riscv/bin/riscv32-unknown-elf-gcc --version
+          printf 'int main(void){ asm volatile("csrr x0, misa"); asm volatile("fence.i"); return 0; }\n' > smoke.c
+          $HOME/riscv/bin/riscv32-unknown-elf-gcc -march=rv32imc_zicsr_zifencei -mabi=ilp32 smoke.c -o smoke.elf
+          ls -l smoke.elf
+
+      - name: Add riscv64-unknown-elf-* aliases (compatibility with existing consumers)
+        run: |
+          cd "$HOME/riscv/bin"
+          for t in riscv32-unknown-elf-*; do
+            ln -svf "$t" "riscv64-unknown-elf-${t#riscv32-unknown-elf-}"
+          done
+
+      - name: Record build inputs
+        working-directory: src
+        run: |
+          {
+            printf 'workflow=%s\n' "$GITHUB_WORKFLOW"
+            printf 'repository_commit=%s\n' "$GITHUB_SHA"
+            printf 'toolchain_commit=%s\n' "$(git rev-parse HEAD)"
+            git submodule status --recursive
+            ./config.status --config
+            "$HOME/riscv/bin/riscv32-unknown-elf-gcc" --version
+          } > "$HOME/riscv/build-info.txt"
+
+      - name: Package
+        run: tar -czf ibex-toolchain-rv32imc.tar.gz -C "$HOME/riscv" .
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ibex-toolchain-rv32imc-${{ github.run_number }}
+          path: ibex-toolchain-rv32imc.tar.gz
+          retention-days: 40
+          compression-level: 0
+          if-no-files-found: error

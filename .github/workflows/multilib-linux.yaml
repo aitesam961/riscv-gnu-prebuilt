@@ -1,33 +1,84 @@
-name: Build Linux Multi-Lib Cross Compiler
+name: RISC-V Linux (multilib)
 
 on:
   workflow_dispatch:
-    inputs:
-      build:
-        description: 'Run the RISC-V Toolchain build'
-        required: true
-        default: 'yes'
+
+# Matches the toolchain revision recorded by the repository submodule.
+env:
+  TOOLCHAIN_REF: 99e2d2bac5144f5152ba6d3fbf04bdd9b9ba4381
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
 
-      - name: Install Dependencies
-        run: sudo apt-get install -y autoconf automake autotools-dev curl python3 python3-pip libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev ninja-build git cmake libglib2.0-dev
-
-      - name: Build RISC-V Toolchain
+      - name: Free up disk space
         run: |
-          git clone https://github.com/riscv/riscv-gnu-toolchain
-          cd riscv-gnu-toolchain
-          ./configure --prefix=/opt/riscv --enable-multilib
-          make -j $(nproc) linux
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                       /usr/local/share/boost /usr/local/graalvm \
+                       /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
 
-      - name: Upload Artifact
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake autotools-dev curl python3 python3-pip \
+            libmpc-dev libmpfr-dev libgmp-dev libusb-1.0-0-dev \
+            gawk build-essential bison flex texinfo gperf libtool \
+            patchutils bc zlib1g-dev libexpat1-dev libncurses-dev \
+            device-tree-compiler
+
+      - name: Clone sources (shallow, parallel submodules)
+        run: |
+          git init src
+          cd src
+          git remote add origin https://github.com/riscv-collab/riscv-gnu-toolchain
+          git fetch --depth 1 origin "$TOOLCHAIN_REF"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$TOOLCHAIN_REF"
+          git submodule update --init --recursive --depth 1 --jobs "$(nproc)"
+
+      - name: Configure
+        working-directory: src
+        run: ./configure --prefix="$HOME/riscv" --enable-multilib
+
+      - name: Build
+        working-directory: src
+        run: make -j"$(nproc)" linux
+
+      - name: Smoke test RV32 and RV64 multilibs
+        run: |
+          compiler="$HOME/riscv/bin/riscv64-unknown-linux-gnu-gcc"
+          "$compiler" --version
+          "$compiler" --print-multi-lib
+          printf 'int main(void){return 0;}\n' > smoke.c
+          "$compiler" -march=rv32imac -mabi=ilp32 smoke.c -o smoke-rv32.elf
+          "$compiler" -march=rv64gc -mabi=lp64d smoke.c -o smoke-rv64.elf
+          "$HOME/riscv/bin/riscv64-unknown-linux-gnu-readelf" -h smoke-rv32.elf | grep -Eq 'Class:[[:space:]]+ELF32'
+          "$HOME/riscv/bin/riscv64-unknown-linux-gnu-readelf" -h smoke-rv64.elf | grep -Eq 'Class:[[:space:]]+ELF64'
+
+      - name: Record build inputs
+        working-directory: src
+        run: |
+          {
+            printf 'workflow=%s\n' "$GITHUB_WORKFLOW"
+            printf 'repository_commit=%s\n' "$GITHUB_SHA"
+            printf 'toolchain_commit=%s\n' "$(git rev-parse HEAD)"
+            git submodule status --recursive
+            ./config.status --config
+            "$HOME/riscv/bin/riscv64-unknown-linux-gnu-gcc" --version
+          } > "$HOME/riscv/build-info.txt"
+
+      - name: Package
+        run: tar -czf multilib-cc-linux.tar.gz -C "$HOME/riscv" .
+
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: multilib-cc-linux
-          path: /opt/riscv
+          name: multilib-cc-linux-${{ github.run_number }}   # unique name (v4 rejects duplicates)
+          path: multilib-cc-linux.tar.gz
+          retention-days: 40
+          compression-level: 0
+          if-no-files-found: error

@@ -3,18 +3,56 @@ Up-to-date Prebuilt RISCV GNU toolchain for painless setup. No more build from s
 
 ### Supported Environment
 Prebuilt riscv-gnu-toolchain binaries for x86_64 host running Linux.
-Built on Ubuntu Latest  and tested on `Ubuntu 24.04 LTS` and `Ubuntu 22.04 LTS`
+Built on Ubuntu 24.04 LTS  and tested on `Ubuntu 24.04 LTS` and `Ubuntu 22.04 LTS`
 
 This repository makes use of GitHub actions to build the `riscv-gnu-toolchain` from source. Just download the prebuilt binaries, add to path and use.
 
-### Available Configurations
-- [x]   RV64 Newlib
-- [x]   RV64GCV
-- [x]   RV64 Linux
-- [x]   RV32 Newlib
-- [x]   Multi-lib Cross Compiler (Baremetal)
-- [x]   Multi-lib Cross Compiler (Linux)
+### Build revisions
 
+Workflows build pinned source revisions. Monthly runs rebuild those revisions;
+they do not automatically upgrade the compiler. Each archive includes
+`build-info.txt` with source commits, configuration flags, and compiler version.
+The CVA6 archive also records the tuning patch checksum.
+
+To upgrade the standard toolchains, update `TOOLCHAIN_REF` in all standard
+workflows together with the repository's toolchain submodule revision. For CVA6,
+update `CVA6_REF`, `TOOLCHAIN_CONFIG`, `GCC_VERSION`, and the three component
+commit IDs together. The fetch step checks that the upstream release tags resolve
+to those component commits before applying the patch. Run the affected workflows
+and check their smoke tests before distributing the updated archives.
+
+### Workflow conventions
+
+Toolchain workflows follow `rv64gc_baremetal.yaml`: Ubuntu 24.04, disk cleanup,
+pinned sources, parallel builds under `$HOME/riscv`, smoke tests, build metadata,
+and `.tar.gz` artifacts retained for 40 days. Tar archives preserve executable
+permissions and symlinks. Existing manual-only workflows remain manual-only.
+Linux workflows build with `make linux`; their smoke tests cross-link executables
+without running them on the x86_64 host. Multilib checks cover both RV32 and RV64.
+
+RV32-only standard builds use `riscv32-unknown-elf-*`; RV64 and bare-metal multilib
+builds use `riscv64-unknown-elf-*`. Ibex also provides `riscv64-unknown-elf-*`
+compatibility aliases. Linux builds use `riscv64-unknown-linux-gnu-*`.
+`cva6_tc.yaml` retains the CVA6 builder and tuning patch (`riscv-none-elf-*`);
+`rv64_gc_cva6.yaml` builds the standard RV64GC compiler without that tuning patch.
+
+### Available Configurations
+
+Configuration names link to the upstream toolchain or CPU repository; workflow
+links open this repository's build definitions. Checked entries indicate available
+build configurations, not a guarantee that the latest Actions run succeeded.
+
+- [x] [RV64 Newlib](https://github.com/riscv-collab/riscv-gnu-toolchain) — `rv64gc_zicsr_zifencei`, `lp64d` ([workflow](.github/workflows/rv64gc_baremetal.yaml)).
+- [x] [RV64GCV Newlib](https://github.com/riscv-collab/riscv-gnu-toolchain) — `rv64gcv_zicsr_zifencei`, `lp64d`, `medlow` ([workflow](.github/workflows/baremetal_rv64gcv_zifencei_zicsr.yaml)).
+- [x] [RV64IMFDC Newlib](https://github.com/riscv-collab/riscv-gnu-toolchain) — `rv64imfdc_zicsr_zifencei`, `lp64d`, `medlow` ([workflow](.github/workflows/rv64imfdc__zifencei_zicsr.yaml)).
+- [x] [RV64 Linux](https://github.com/riscv-collab/riscv-gnu-toolchain) — `rv64gc`, `lp64d`, glibc ([workflow](.github/workflows/rv64linux_tc_build.yaml)).
+- [x] [RV32IMF Newlib](https://github.com/riscv-collab/riscv-gnu-toolchain) — `rv32imf`, `ilp32f` ([workflow](.github/workflows/rv32imf_newlib_tc_builder.yaml)).
+- [x] [SCR1 / RV32IMC Newlib](https://github.com/syntacore/scr1) — `rv32imc_zicsr_zifencei`, `ilp32` ([scheduled/manual workflow](.github/workflows/scr1_tc.yaml), [manual-only workflow](.github/workflows/scr1-baremetal.yaml)).
+- [x] [Ibex Newlib](https://github.com/lowRISC/ibex) — `rv32imc_zicsr_zifencei`, `ilp32`, with compatibility aliases ([workflow](.github/workflows/ibex_tc.yaml)).
+- [x] [CVA6 Newlib (standard GCC)](https://github.com/openhwfoundation/cva6) — `rv64gc_zicsr_zifencei`, `lp64d`, `medlow`; no CVA6 tuning patch ([workflow](.github/workflows/rv64_gc_cva6.yaml)).
+- [x] [CVA6 Newlib (tuned GCC 13.1.0)](https://github.com/openhwfoundation/cva6) — CVA6's `gcc-13.1.0-baremetal` configuration with the `-mtune=cva6` patch ([workflow](.github/workflows/cva6_tc.yaml)).
+- [x] [Multilib Cross Compiler (Baremetal / Newlib)](https://github.com/riscv-collab/riscv-gnu-toolchain) — RV32 and RV64 libraries ([scheduled/manual workflow](.github/workflows/multi-lib.yaml), [manual-only workflow](.github/workflows/multi-lib_tc_builder.yaml)).
+- [x] [Multilib Cross Compiler (Linux / glibc)](https://github.com/riscv-collab/riscv-gnu-toolchain) — RV32 and RV64 libraries ([workflow](.github/workflows/multilib-linux.yaml)).
 
 If you require a custom configuration, consider building yourself or open an Issue with tag:`Enhancement`
 
@@ -78,7 +116,7 @@ cd soft-sky-riscv-gnu-prebuilt/.github/workflows
 2- Create a new `rvxxxxx_tc_build.yaml` file.        
 3- Make changes here according to your needs:
 ```
-./configure --prefix=/opt/riscv --with-arch=rv32gc --with-abi=ilp32d
+./configure --prefix="$HOME/riscv" --with-arch=rv32gc --with-abi=ilp32d
 ```
 4- Commit (push if on local)      
 5- Go to GitHub.com/your_forked_repo > Actions > All Workflows > click your created .yaml file and `Run Workflow`
