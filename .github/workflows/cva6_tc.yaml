@@ -3,7 +3,15 @@ name: CVA6 Toolchain Builder (GCC 13.1.0, -mtune=cva6)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 1 * *"    # 1st of each month — delete these 2 lines if manual-only
+    - cron: "0 3 1 * *"    # 03:00 UTC on the 1st of every month
+
+env:
+  CVA6_REF: 81245a47fad8fe1a5d562d953ef2662e099def76
+  TOOLCHAIN_CONFIG: gcc-13.1.0-baremetal
+  GCC_VERSION: 13.1.0
+  GCC_REF: cc035c5d8672f87dc8c2756d9f8367903aa72d93
+  BINUTILS_REF: 32778522c7d8777803c88684b8e428ee729f0b22
+  NEWLIB_REF: 9e09d6ed83cce4777a5950412647ccc603040409
 
 jobs:
   build:
@@ -18,7 +26,7 @@ jobs:
                        /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force >/dev/null 2>&1 || true
 
-      - name: Install dependencies (toolchain-builder prerequisites)
+      - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -28,23 +36,35 @@ jobs:
             bc zlib1g-dev
 
       - name: Clone CVA6
-        run: git clone --depth 1 https://github.com/openhwfoundation/cva6 cva6
+        run: |
+          git init cva6
+          cd cva6
+          git remote add origin https://github.com/openhwfoundation/cva6
+          git fetch --depth 1 origin "$CVA6_REF"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$CVA6_REF"
 
       - name: Fetch toolchain sources
         working-directory: cva6/util/toolchain-builder
-        run: bash get-toolchain.sh
+        run: |
+          bash get-toolchain.sh "$TOOLCHAIN_CONFIG"
+          # Fail if a release tag has moved or the fetch script failed silently.
+          test "$(git -C src/gcc rev-parse HEAD)" = "$GCC_REF"
+          test "$(git -C src/binutils-gdb rev-parse HEAD)" = "$BINUTILS_REF"
+          test "$(git -C src/newlib rev-parse HEAD)" = "$NEWLIB_REF"
 
       - name: Apply CVA6 tuning patch (adds -mtune=cva6)
         working-directory: cva6/util/toolchain-builder/src/gcc
         run: git apply ../../gcc-cva6-tune.patch
 
-      - name: Build toolchain (default config gcc-13.1.0-baremetal)
+      - name: Build toolchain (gcc-13.1.0-baremetal)
         working-directory: cva6/util/toolchain-builder
-        run: bash build-toolchain.sh "$HOME/riscv"
+        run: NUM_JOBS="$(nproc)" bash build-toolchain.sh "$TOOLCHAIN_CONFIG" "$HOME/riscv"
 
-      - name: Sanity check (verifies the -mtune=cva6 patch took)
+      - name: Smoke test (verifies the -mtune=cva6 patch took)
         run: |
-          $HOME/riscv/bin/riscv-none-elf-gcc --version
+          "$HOME/riscv/bin/riscv-none-elf-gcc" --version
+          test "$("$HOME/riscv/bin/riscv-none-elf-gcc" -dumpfullversion)" = "$GCC_VERSION"
           printf 'int main(void){return 0;}\n' > /tmp/t.c
           $HOME/riscv/bin/riscv-none-elf-gcc -mtune=cva6 -S /tmp/t.c -o /tmp/t.s
 
@@ -56,10 +76,31 @@ jobs:
       #       ln -sv "$t" "riscv64-unknown-elf-${t#riscv-none-elf-}"
       #     done
 
+      - name: Record build inputs
+        working-directory: cva6/util/toolchain-builder
+        run: |
+          export ROOT_DIR="$PWD"
+          export INSTALL_DIR="$HOME/riscv"
+          source config/global.sh
+          {
+            printf 'workflow=%s\n' "$GITHUB_WORKFLOW"
+            printf 'repository_commit=%s\n' "$GITHUB_SHA"
+            printf 'cva6_commit=%s\n' "$(git rev-parse HEAD)"
+            printf 'configuration=%s\n' "$TOOLCHAIN_CONFIG"
+            for component in gcc binutils-gdb newlib; do
+              printf '%s_commit=%s\n' "$component" "$(git -C "src/$component" rev-parse HEAD)"
+            done
+            sha256sum gcc-cva6-tune.patch
+            BINUTILS_CONFIGURE_OPTS riscv-none-elf
+            GCC_CONFIGURE_OPTS
+            NEWLIB_CONFIGURE_OPTS riscv-none-elf
+            "$INSTALL_DIR/bin/riscv-none-elf-gcc" --version
+          } > "$INSTALL_DIR/build-info.txt"
+
       - name: Package
         run: tar -czf cva6-toolchain.tar.gz -C "$HOME/riscv" .
 
-      - name: Upload artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: cva6-toolchain-${{ github.run_number }}

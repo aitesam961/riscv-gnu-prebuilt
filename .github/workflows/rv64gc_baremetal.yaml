@@ -5,6 +5,10 @@ on:
     - cron: "0 3 1 * *"    # 03:00 UTC on the 1st of every month
   workflow_dispatch:
 
+# Matches the toolchain revision recorded by the repository submodule.
+env:
+  TOOLCHAIN_REF: 99e2d2bac5144f5152ba6d3fbf04bdd9b9ba4381
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -30,8 +34,12 @@ jobs:
 
       - name: Clone sources (shallow, parallel submodules)
         run: |
-          git clone --depth 1 https://github.com/riscv-collab/riscv-gnu-toolchain src
+          git init src
           cd src
+          git remote add origin https://github.com/riscv-collab/riscv-gnu-toolchain
+          git fetch --depth 1 origin "$TOOLCHAIN_REF"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$TOOLCHAIN_REF"
           git submodule update --init --recursive --depth 1 --jobs "$(nproc)"
 
       - name: Configure
@@ -48,6 +56,18 @@ jobs:
           printf 'int main(void){ asm volatile("csrr x0, misa"); asm volatile("fence.i"); return 0; }\n' > smoke.c
           $HOME/riscv/bin/riscv64-unknown-elf-gcc -march=rv64gc_zicsr_zifencei -mabi=lp64d smoke.c -o smoke.elf
           ls -l smoke.elf
+
+      - name: Record build inputs
+        working-directory: src
+        run: |
+          {
+            printf 'workflow=%s\n' "$GITHUB_WORKFLOW"
+            printf 'repository_commit=%s\n' "$GITHUB_SHA"
+            printf 'toolchain_commit=%s\n' "$(git rev-parse HEAD)"
+            git submodule status --recursive
+            ./config.status --config
+            "$HOME/riscv/bin/riscv64-unknown-elf-gcc" --version
+          } > "$HOME/riscv/build-info.txt"
 
       - name: Package
         run: tar -czf riscv-newlib-rv64gc.tar.gz -C "$HOME/riscv" .

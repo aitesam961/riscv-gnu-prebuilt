@@ -3,7 +3,11 @@ name: Ibex Toolchain (rv32imc newlib)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 1 * *"    # 1st of each month — delete these 2 lines if manual-only
+    - cron: "0 3 1 * *"    # 03:00 UTC on the 1st of every month
+
+# Matches the toolchain revision recorded by the repository submodule.
+env:
+  TOOLCHAIN_REF: 99e2d2bac5144f5152ba6d3fbf04bdd9b9ba4381
 
 jobs:
   build:
@@ -15,25 +19,27 @@ jobs:
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
                        /usr/local/share/boost /usr/local/graalvm \
-                       /usr/local/share/chromium /usr/local/share/powershell \
-                       /usr/lib/jvm /opt/hostedtoolcache
+                       /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force >/dev/null 2>&1 || true
-          sudo apt-get clean
-          df -h /
 
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            autoconf automake autotools-dev curl python3 python3-pip git \
+            autoconf automake autotools-dev curl python3 python3-pip \
             libmpc-dev libmpfr-dev libgmp-dev libusb-1.0-0-dev \
             gawk build-essential bison flex texinfo gperf libtool \
-            patchutils bc zlib1g-dev libexpat1-dev libncurses-dev
+            patchutils bc zlib1g-dev libexpat1-dev libncurses-dev \
+            device-tree-compiler
 
       - name: Clone sources (shallow, parallel submodules)
         run: |
-          git clone --depth 1 https://github.com/riscv-collab/riscv-gnu-toolchain src
+          git init src
           cd src
+          git remote add origin https://github.com/riscv-collab/riscv-gnu-toolchain
+          git fetch --depth 1 origin "$TOOLCHAIN_REF"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$TOOLCHAIN_REF"
           git submodule update --init --recursive --depth 1 --jobs "$(nproc)"
 
       - name: Configure (Ibex- rv32imc, soft-float)
@@ -64,23 +70,35 @@ jobs:
 
       - name: Smoke test (verifies zicsr + zifencei assemble/link)
         run: |
-          $HOME/riscv/bin/riscv64-unknown-elf-gcc --version
+          $HOME/riscv/bin/riscv32-unknown-elf-gcc --version
           printf 'int main(void){ asm volatile("csrr x0, misa"); asm volatile("fence.i"); return 0; }\n' > smoke.c
-          $HOME/riscv/bin/riscv64-unknown-elf-gcc -march=rv32imc_zicsr_zifencei -mabi=ilp32 smoke.c -o smoke.elf
+          $HOME/riscv/bin/riscv32-unknown-elf-gcc -march=rv32imc_zicsr_zifencei -mabi=ilp32 smoke.c -o smoke.elf
           ls -l smoke.elf
 
-      - name: Add riscv32-unknown-elf-* aliases (Ibex scripts expect this prefix)
+      - name: Add riscv64-unknown-elf-* aliases (compatibility with existing consumers)
         run: |
           cd "$HOME/riscv/bin"
-          for t in riscv64-unknown-elf-*; do
-            ln -svf "$t" "riscv32-unknown-elf-${t#riscv64-unknown-elf-}"
+          for t in riscv32-unknown-elf-*; do
+            ln -svf "$t" "riscv64-unknown-elf-${t#riscv32-unknown-elf-}"
           done
 
-      - name: Package (tar preserves exec permissions and symlinks)
+      - name: Record build inputs
+        working-directory: src
+        run: |
+          {
+            printf 'workflow=%s\n' "$GITHUB_WORKFLOW"
+            printf 'repository_commit=%s\n' "$GITHUB_SHA"
+            printf 'toolchain_commit=%s\n' "$(git rev-parse HEAD)"
+            git submodule status --recursive
+            ./config.status --config
+            "$HOME/riscv/bin/riscv32-unknown-elf-gcc" --version
+          } > "$HOME/riscv/build-info.txt"
+
+      - name: Package
         run: tar -czf ibex-toolchain-rv32imc.tar.gz -C "$HOME/riscv" .
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v5
+      - name: Upload
+        uses: actions/upload-artifact@v4
         with:
           name: ibex-toolchain-rv32imc-${{ github.run_number }}
           path: ibex-toolchain-rv32imc.tar.gz
