@@ -38,26 +38,33 @@ compatibility aliases. Linux builds use `riscv64-unknown-linux-gnu-*`.
 
 ### Available Configurations
 
-Configuration names link to the upstream toolchain or CPU repository; workflow
-links open this repository's build definitions. Checked entries indicate available
-build configurations, not a guarantee that the latest Actions run succeeded.
+Choose a configuration below. Names link to the upstream project; **Build status**
+links to its Actions runs, and **Source** opens the workflow definition.
 
-- [x] [RV64 Newlib](https://github.com/riscv-collab/riscv-gnu-toolchain) — `rv64gc_zicsr_zifencei`, `lp64d` ([workflow](.github/workflows/rv64gc_baremetal.yaml)).
-- [x] [RV64GCV Newlib](https://github.com/riscv-collab/riscv-gnu-toolchain) — `rv64gcv_zicsr_zifencei`, `lp64d`, `medlow` ([workflow](.github/workflows/baremetal_rv64gcv_zifencei_zicsr.yaml)).
-- [x] [RV64IMFDC Newlib](https://github.com/riscv-collab/riscv-gnu-toolchain) — `rv64imfdc_zicsr_zifencei`, `lp64d`, `medlow` ([workflow](.github/workflows/rv64imfdc__zifencei_zicsr.yaml)).
-- [x] [RV64 Linux](https://github.com/riscv-collab/riscv-gnu-toolchain) — `rv64gc`, `lp64d`, glibc ([workflow](.github/workflows/rv64linux_tc_build.yaml)).
-- [x] [RV32IMF Newlib](https://github.com/riscv-collab/riscv-gnu-toolchain) — `rv32imf`, `ilp32f` ([workflow](.github/workflows/rv32imf_newlib_tc_builder.yaml)).
-- [x] [SCR1 / RV32IMC Newlib](https://github.com/syntacore/scr1) — `rv32imc_zicsr_zifencei`, `ilp32` ([scheduled/manual workflow](.github/workflows/scr1_tc.yaml), [manual-only workflow](.github/workflows/scr1-baremetal.yaml)).
-- [x] [Ibex Newlib](https://github.com/lowRISC/ibex) — `rv32imc_zicsr_zifencei`, `ilp32`, with compatibility aliases ([workflow](.github/workflows/ibex_tc.yaml)).
-- [x] [CVA6 Newlib (standard GCC)](https://github.com/openhwfoundation/cva6) — `rv64gc_zicsr_zifencei`, `lp64d`, `medlow`; no CVA6 tuning patch ([workflow](.github/workflows/rv64_gc_cva6.yaml)).
-- [x] [CVA6 Newlib (tuned GCC 13.1.0)](https://github.com/openhwfoundation/cva6) — CVA6's `gcc-13.1.0-baremetal` configuration with the `-mtune=cva6` patch ([workflow](.github/workflows/cva6_tc.yaml)).
-- [x] [Multilib Cross Compiler (Baremetal / Newlib)](https://github.com/riscv-collab/riscv-gnu-toolchain) — RV32 and RV64 libraries ([scheduled/manual workflow](.github/workflows/multi-lib.yaml), [manual-only workflow](.github/workflows/multi-lib_tc_builder.yaml)).
-- [x] [Multilib Cross Compiler (Linux / glibc)](https://github.com/riscv-collab/riscv-gnu-toolchain) — RV32 and RV64 libraries ([workflow](.github/workflows/multilib-linux.yaml)).
+| Configuration | ISA / ABI | Details | Build status | Source |
+| :--- | :--- | :--- | :---: | :---: |
+| [RV64 Newlib](https://github.com/riscv-collab/riscv-gnu-toolchain) | `rv64gc_zicsr_zifencei`<br>`lp64d` | — | [![RV64 Newlib build](https://github.com/aitesam961/riscv-gnu-prebuilt/actions/workflows/rv64gc_baremetal.yaml/badge.svg)](https://github.com/aitesam961/riscv-gnu-prebuilt/actions/workflows/rv64gc_baremetal.yaml) | [YAML](.github/workflows/rv64gc_baremetal.yaml) |
+| [SCR1 Newlib](https://github.com/syntacore/scr1) | `rv32imc_zicsr_zifencei`<br>`ilp32` | Monthly + manual | [![SCR1 Newlib build](https://github.com/aitesam961/riscv-gnu-prebuilt/actions/workflows/scr1_tc.yaml/badge.svg)](https://github.com/aitesam961/riscv-gnu-prebuilt/actions/workflows/scr1_tc.yaml) | [YAML](.github/workflows/scr1_tc.yaml) |
+| [Ibex Newlib](https://github.com/lowRISC/ibex) | `rv32imc_zicsr_zifencei`<br>`ilp32` | Compatibility aliases | [![Ibex Newlib build](https://github.com/aitesam961/riscv-gnu-prebuilt/actions/workflows/ibex_tc.yaml/badge.svg)](https://github.com/aitesam961/riscv-gnu-prebuilt/actions/workflows/ibex_tc.yaml) | [YAML](.github/workflows/ibex_tc.yaml) |
+| [CVA6 · tuned](https://github.com/openhwfoundation/cva6) | `gcc-13.1.0-baremetal` | GCC 13.1.0; `-mtune=cva6` | [![CVA6 · tuned build](https://github.com/aitesam961/riscv-gnu-prebuilt/actions/workflows/cva6_tc.yaml/badge.svg)](https://github.com/aitesam961/riscv-gnu-prebuilt/actions/workflows/cva6_tc.yaml) | [YAML](.github/workflows/cva6_tc.yaml) |
+| [Multilib · baremetal](https://github.com/riscv-collab/riscv-gnu-toolchain) | RV32 + RV64<br>Multiple ABIs | Newlib; monthly + manual | [![Multilib · baremetal build](https://github.com/aitesam961/riscv-gnu-prebuilt/actions/workflows/multi-lib.yaml/badge.svg)](https://github.com/aitesam961/riscv-gnu-prebuilt/actions/workflows/multi-lib.yaml) | [YAML](.github/workflows/multi-lib.yaml) |
+
+**Downloading a build:** click its status badge, open a successful run, and select
+its `.tar.gz` package under **Artifacts** (GitHub sign-in required). These are
+compiler archives, not container images. Artifacts are retained for **40 days**.
+
+Badges update automatically using [GitHub's workflow status](https://docs.github.com/en/actions/how-tos/monitor-workflows/add-a-status-badge).
+They normally show the default branch; if it has no runs, GitHub uses the latest
+run across branches. A passing badge records build success, but does **not**
+guarantee that the archive is still available: it may have expired or been deleted.
+A live availability checkbox would require automation that checks for a completed,
+successful run and a matching, unexpired artifact through the GitHub API;
+Markdown checkboxes alone do not update automatically.
 
 If you require a custom configuration, consider building yourself or open an Issue with tag:`Enhancement`
 
 ### Installation
-1- Download prebuilt binaries from GitHub [Actions](https://github.com/aitesam961/soft-sky-riscv-gnu-prebuilt/actions) > Artifacts
+1- Download prebuilt binaries from GitHub [Actions](https://github.com/aitesam961/riscv-gnu-prebuilt/actions) > Artifacts
 
 2- Create directory for sources. Preferred `/home/usr/` to avoid the possibility of toolchain affecting any of the system files.
 
